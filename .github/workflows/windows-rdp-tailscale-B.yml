@@ -1,0 +1,64 @@
+name: 🖥️ FAIL
+on: workflow_dispatch
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+
+      - name: 🔑 Set RunnerAdmin Password
+        run: |
+          net user runneradmin TK#12345
+
+      - name: 📥 Download Firefox Portable
+        shell: powershell
+        run: |
+          $zip  = "$env:TEMP\FirefoxPortable.zip"
+          $dst  = "$env:USERPROFILE\Downloads"
+          $ffDir = "$dst\FirefoxPortable"
+
+          if (Test-Path $ffDir) { Remove-Item -Recurse -Force $ffDir }
+          if (Test-Path $zip)   { Remove-Item -Force $zip }
+
+          Write-Host "Downloading Firefox Portable..."
+          Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fo/9n644cwuq4gpw6123dpph/AJvMFsxMkDWK_0FYWDjzJE8?rlkey=i6k3lpcz6t5k0pfaf7h6co8g2&st=mugwmea9&dl=0" -OutFile $zip -UseBasicParsing
+
+          Expand-Archive -Path $zip -DestinationPath $dst -Force
+          Write-Host "✅ Firefox Portable extracted to $ffDir"
+
+      - name: 🌐 Install & Configure Tailscale
+        shell: powershell
+        run: |
+          Write-Host "Installing Tailscale..."
+          Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile "$env:TEMP\tailscale-setup.exe"
+          Start-Process "$env:TEMP\tailscale-setup.exe" -ArgumentList "/quiet" -Wait
+          Write-Host "✅ Tailscale installed"
+          tailscale up --authkey YOUR_TAILSCALE_AUTHKEY --hostname GH-WinVM --accept-routes
+
+      - name: 🌐 Install & Join ZeroTier
+        shell: powershell
+        run: |
+          $ztExe = "C:\ProgramData\ZeroTier\One\zerotier-one_x64.exe"
+          if (-not (Test-Path $ztExe)) {
+            Write-Host "Downloading ZeroTier..."
+            Invoke-WebRequest https://download.zerotier.com/dist/ZeroTier%20One.msi -OutFile "$env:TEMP\zerotier.msi"
+            Start-Process msiexec.exe -ArgumentList "/i `"$env:TEMP\zerotier.msi`" /quiet" -Wait
+          }
+          Write-Host "Joining ZeroTier network..."
+          & "C:\ProgramData\ZeroTier\One\zerotier-cli.bat" join 4753cf475fd1d946
+
+      - name: 🚀 Launch Firefox Portable (low priority)
+        shell: powershell
+        run: |
+          $ffExe = "$env:USERPROFILE\Downloads\FirefoxPortable\FirefoxPortable.exe"
+          if (Test-Path $ffExe) {
+            Write-Host "Launching FirefoxPortable..."
+            Start-Process $ffExe -ArgumentList "-no-remote" -WindowStyle Normal
+          } else {
+            Write-Host "❌ FirefoxPortable not found!"
+          }
+
+      - name: 🕒 Keep Session Alive (~6h)
+        run: |
+          echo "Keeping session alive for 5h 55m..."
+          timeout /t 21300 >nul
